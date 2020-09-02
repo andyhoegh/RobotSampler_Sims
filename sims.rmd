@@ -146,7 +146,7 @@ tibble(vals = c(probs_out),
 
 Simulation 2 once again uses a fixed occupancy probability ($\psi$), but now the detection probability ($p$) changes with time. The study explores the impact of different levels of $\psi=\{.1, .2, .3\}$ and the total number of samples. Furthermore, $p$ will be either {.1,.3,.5} on average, but will vary daily.
 
-```{r}
+```{r, echo = F}
 sim2 <- function(num_sims, Num_T, psi, p, sampling_interval){
   num_collections <- Num_T / sampling_interval
   num_replicates <- Num_T / num_collections
