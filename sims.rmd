@@ -1,0 +1,212 @@
+---
+title: "High Frequency Sampling Simulation"
+date: "Updated: `r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(arm)
+```
+
+
+#### Simulation Goal
+
+The goal of this simulation is to demonstrate that high-frequency sampling can better detect rare species than conventional sampling when controlling for the total number of samples.
+
+### Simulation Overview
+
+The simulations should (somewhat) mirror Fig 1 from _Estimating Site Occupancy Rates When Detection Probabilities Are Less Than One._ 
+
+#### Occupancy Framework
+
+\begin{align}
+Z_i & \sim Bernoulli(\psi_i), \\
+Y_{itj} & \sim Binomial(n_j, \psi_i p_{it}), \;\; p_{it} = \frac{exp(x_{it} \beta)}{1 + \exp(x_{it} \beta)}
+\end{align}
+
+where $Z_i$ is the latent occupancy at site $i$,  $\psi_i$ is the probability that the species is present at site $i$, $Y_{itj}$ is the observed occupancy at site $i$, time $t$, and for the $j^{th}$ replicate, and $p_{it}$ is the probability that the species will be detected at site $i$ and time $t$, given presence.
+
+#### Simulation 1
+
+Simulation 1 uses a fixed occupancy probability ($\psi$) and fixed detection probability ($p$). The study explores the impact of different levels of $\psi=\{.1, .2, .3\}$, $p=\{.1, .3, .5\}$, and the total number of samples. A high-frequency approach takes daily samples, whereas, the weekly sampling approach takes 7 samples once a week. With this study, we assume that the species is rare and any detection would lead to actionable interventions. Hence, we compare the total frequency of the sampling regimes, either daily samples for a certain number of weeks or 7 samples collected for a certain number of weeks, that result in at least one detection.
+
+The results can be seen in Figure 1. As the species becomes easier to detect, there is separation between the two approaches, where the high frequency sampling has a larger proportion of sampling regimes that end up with at least one positive detection. Part of this result is possible driven by the assumptions about the underlying model structure. The occupancy model framework would assume occupancy for a given day ($Z_{it}$) is either zero or one, then if the occupancy is one, the weekly sampling approach would have seven tries to capture it whereas the high-frequency sampling would have just one. However, there would be six more occupancy values generated for the remainder of the week and the high-frequency sampling approach would allow a single chance to detect each.
+
+```{r, echo = F}
+sim1a <- function(num_sims, Num_T, psi, p, sampling_interval){
+  num_collections <- Num_T / sampling_interval
+  num_replicates <- Num_T / num_collections
+  detect_freq <- data.frame(matrix(0, num_sims, 2))
+  colnames(detect_freq) <- c('Conv','HF')
+
+  if (!(num_replicates %% 1 == 0 & num_collections %% 1 == 0)) stop('replicates are not equal across sampling events')
+
+  for (i in 1:num_sims){
+    # sim latent occupancy
+    Z <- rbinom(Num_T, 1, psi)
+
+    # high-frequency detection
+    Y_hf <- rbinom(Num_T, 1, Z * p)
+
+    # conventional detection
+    Y_conv <- rbinom(num_collections, num_replicates, p * Z[seq(from = 1, to = Num_T, by = sampling_interval)])
+
+    detect_freq[i,] <- c(sum(Y_conv / Num_T), sum(Y_hf / Num_T))
+  }
+  return(colMeans(detect_freq > 0))
+}
+
+sim1b <- function(num_sims, Num_T, psi, p, sampling_interval){
+  num_collections <- Num_T / sampling_interval
+  num_replicates <- Num_T / num_collections
+  detect_freq <- data.frame(matrix(0, num_sims, 2))
+  colnames(detect_freq) <- c('Conv','HF')
+
+  if (!(num_replicates %% 1 == 0 & num_collections %% 1 == 0)) stop('replicates are not equal across sampling events')
+
+  for (i in 1:num_sims){
+    # sim latent occupancy
+    Z <- rbinom(Num_T, 1, psi)
+
+    # high-frequency detection
+    Y_hf <- rbinom(Num_T, 1, Z * p)
+
+    # conventional detection
+    Y_conv <- rbinom(Num_T, 1, Z * p)
+
+    detect_freq[i,] <- c(sum(Y_conv / Num_T), sum(Y_hf / Num_T))
+  }
+  return(colMeans(detect_freq > 0))
+}
+
+```
+
+```{r, echo = F, fig.height = 8, fig.cap = 'Simulation 1a. Probability of detection as a function of p, psi, and number of weeks. The high-frequency approach collects samples daily and the weekly approach takes 7 samples once a week. The figure shows that, even when the total number of samples are the same, the high frequency approach detects the rare species in a higher frequency of the sampling schemes.'}
+# initialize
+num_sims <- 1000
+Num_T <- rep(c(7, 14, 21, 28, 35, 42, 49, 56), 9)
+psi <- rep(c(.1, .2, .3), each =24)
+p <- rep(c(.1,.3,.5), 24)
+sampling_interval <- 7
+
+
+probs_out <- matrix(0, length(Num_T), 2)
+
+for (sims in 1:length(Num_T)){
+  probs_out[sims,] <- sim1a(num_sims, Num_T[sims], psi[sims], p[sims], sampling_interval)
+}
+
+tibble(vals = c(probs_out), 
+       sample_method = rep(c('Weekly','High-Frequency'), each = length(Num_T)), 
+       num_weeks = rep(Num_T/sampling_interval, 2),
+       psi = rep(psi,2), p = rep(p,2)) %>% 
+  ggplot(aes(y = vals, x = num_weeks, color = sample_method)) + 
+  geom_point() + theme_bw() + xlab('Number of Weeks') + 
+  ylab('Proportion of sampling schemes with a detection') + 
+  ggtitle('Probability of Detecting Rare Species') + 
+  geom_smooth(method = 'loess', formula = 'y~x', se = F) +
+  facet_wrap(p ~ psi, labeller = "label_both") +
+  theme(legend.position = 'bottom') + 
+  labs(color = "Sampling Approach")
+```
+
+If we assume that occupancy varies for each of the individual samples within the weekly sampling approach, both methods would see the same results as can be shown in Figure 2.
+
+```{r, echo = F, fig.height = 8, fig.cap = 'Simulation 1b. '}
+# initialize
+num_sims <- 1000
+Num_T <- rep(c(7, 14, 21, 28, 35, 42, 49, 56), 9)
+psi <- rep(c(.1, .2, .3), each =24)
+p <- rep(c(.1,.3,.5), 24)
+sampling_interval <- 7
+
+
+probs_out <- matrix(0, length(Num_T), 2)
+
+for (sims in 1:length(Num_T)){
+  probs_out[sims,] <- sim1b(num_sims, Num_T[sims], psi[sims], p[sims], sampling_interval)
+}
+
+tibble(vals = c(probs_out), 
+       sample_method = rep(c('Weekly','High-Frequency'), each = length(Num_T)), 
+       num_weeks = rep(Num_T/sampling_interval, 2),
+       psi = rep(psi,2), p = rep(p,2)) %>% 
+  ggplot(aes(y = vals, x = num_weeks, color = sample_method)) + 
+  geom_point() + theme_bw() + xlab('Number of Weeks') + 
+  ylab('Proportion of sampling schemes with a detection') + 
+  ggtitle('Probability of Detecting Rare Species') + 
+  geom_smooth(method = 'loess', formula = 'y~x', se = F) +
+  facet_wrap(p ~ psi, labeller = "label_both") +
+  theme(legend.position = 'bottom') + 
+  labs(color = "Sampling Approach")
+```
+
+#### Simulation 2
+
+Simulation 2 once again uses a fixed occupancy probability ($\psi$), but now the detection probability ($p$) changes with time. The study explores the impact of different levels of $\psi=\{.1, .2, .3\}$ and the total number of samples. Furthermore, $p$ will be either {.1,.3,.5} on average, but will vary daily.
+
+```{r}
+sim2 <- function(num_sims, Num_T, psi, p, sampling_interval){
+  num_collections <- Num_T / sampling_interval
+  num_replicates <- Num_T / num_collections
+  detect_freq <- data.frame(matrix(0, num_sims, 2))
+  colnames(detect_freq) <- c('Conv','HF')
+
+  if (!(num_replicates %% 1 == 0 & num_collections %% 1 == 0)) stop('replicates are not equal across sampling events')
+
+  for (i in 1:num_sims){
+    # sim latent occupancy
+    Z <- rbinom(Num_T, 1, psi)
+
+    eta_0 <- logit(p)
+    diff_vec <- rep(0, Num_T)
+    eta_vec <- rep(eta_0, Num_T)
+    p_vec <- rep(arm::invlogit(eta_0), Num_T)
+    for (t in 2:Num_T){
+        diff_vec[t] <- .5 * diff_vec[t-1] + rnorm(1,0,.3) 
+        eta_vec[t] <- eta_0 + diff_vec[t]
+        p_vec[t] <- invlogit(eta_vec[t])
+    }
+    
+    # high-frequency detection
+    Y_hf <- rbinom(Num_T, 1, Z * p_vec)
+
+    # conventional detection
+    Y_conv <- rbinom(num_collections, num_replicates, 
+                     p_vec[seq(from = 1, to = Num_T, by = sampling_interval)] * Z[seq(from = 1, to = Num_T, by = sampling_interval)])
+
+    detect_freq[i,] <- c(sum(Y_conv / Num_T), sum(Y_hf / Num_T))
+  }
+  return(colMeans(detect_freq > 0))
+}
+```
+
+```{r, echo = F, fig.height = 8, fig.cap = 'Simulation 2. '}
+# initialize
+num_sims <- 1000
+Num_T <- rep(c(7, 14, 21, 28, 35, 42, 49, 56), 9)
+psi <- rep(c(.1, .2, .3), each =24)
+p <- rep(c(.1,.3,.5), 24)
+sampling_interval <- 7
+
+
+probs_out <- matrix(0, length(Num_T), 2)
+
+for (sims in 1:length(Num_T)){
+  probs_out[sims,] <- sim2(num_sims, Num_T[sims], psi[sims], p[sims], sampling_interval)
+}
+
+tibble(vals = c(probs_out), 
+       sample_method = rep(c('Weekly','High-Frequency'), each = length(Num_T)), 
+       num_weeks = rep(Num_T/sampling_interval, 2),
+       psi = rep(psi,2), p = rep(p,2)) %>% 
+  ggplot(aes(y = vals, x = num_weeks, color = sample_method)) + 
+  geom_point() + theme_bw() + xlab('Number of Weeks') + 
+  ylab('Proportion of sampling schemes with a detection') + 
+  ggtitle('Probability of Detecting Rare Species') + 
+  geom_smooth(method = 'loess', formula = 'y~x', se = F) +
+  facet_wrap(p ~ psi, labeller = "label_both") +
+  theme(legend.position = 'bottom') + 
+  labs(color = "Sampling Approach")
+```
